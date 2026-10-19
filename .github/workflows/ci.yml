@@ -1,0 +1,57 @@
+name: Security CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # SAST — static code analysis with Bandit
+  # ---------------------------------------------------------------------------
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit (SAST)
+        # `|| true` keeps the pipeline green so the report can be reviewed,
+        # even if findings exist; adjust `--severity-level` to gate on high.
+        run: bandit -r app.py db.py -f json -o bandit-report.json || true
+
+      - name: Upload SAST report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  # ---------------------------------------------------------------------------
+  # SCA — dependency vulnerability scan with OWASP Dependency-Check
+  # ---------------------------------------------------------------------------
+  sca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check (SCA)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "secure-api-lab"
+          path: "."
+          format: "HTML"
+          args: >
+            --failOnCVSS 0
+
+      - name: Upload SCA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: ${{ github.workspace }}/reports

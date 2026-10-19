@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Local database (contains hashed passwords / demo data)
+app.db
+
+# SAST/SCA report outputs
+bandit-report.json
+reports/
+dependency-check-report*
+
+# IDE
+.idea/
+.vscode/
