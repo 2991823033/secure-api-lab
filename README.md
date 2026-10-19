@@ -190,6 +190,9 @@ uploads still work.
 ├── cve/
 │   ├── index.php               # fixed file for CVE-2013-4547
 │   └── CVE-2013-4547.md        # CVE analysis report
+├── poc/
+│   ├── upload.py               # upload "1.gif " (trailing-space) payload
+│   └── exploit.py              # send raw space + NUL byte URI -> RCE
 └── README.md
 ```
 
