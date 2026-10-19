@@ -10,7 +10,7 @@ security lifecycle described in the lab manual:
 2. A GitHub Actions CI/CD pipeline that runs SAST (Bandit) and SCA
    (OWASP Dependency-Check) on every push.
 3. Reproduction, root-cause analysis, and remediation of a real CVE
-   (`CVE-2018-1000656`) in a controlled Docker/Vulhub environment.
+   (`CVE-2013-4547`) in a controlled Docker/Vulhub environment.
 
 ---
 
@@ -128,55 +128,54 @@ A link to the last successful pipeline run:
 
 ## 4. CVE reproduction & remediation
 
-Selected vulnerability: **CVE-2018-1000656**.
+Selected vulnerability: **CVE-2013-4547** (Nginx filename logic vulnerability).
 
 ### 4.1 Summary
 
-A denial-of-service / information-leak issue in Flask (through its bundled
-Werkzeug debugger) when the application is run with the debugger enabled and a
-predictable/weak PIN. An attacker who can obtain the debugger PIN can execute
-arbitrary code, and certain inputs can crash the process or leak internal state.
+Nginx 0.8.41–1.4.3 (and 1.5.x before 1.5.7) incorrectly parses URIs containing
+an unescaped space. A request such as `1.gif\x20\x00.php` matches the `\.php$`
+location (it ends with `.php`), so Nginx routes it to PHP-FPM — but the NUL
+byte truncates the script filename back to `1.gif ` (trailing space). An
+attacker uploads a file named `1.gif ` (whose PHP code bypasses the `.php`
+blacklist) and then requests it with the space+NUL trick, achieving **remote
+code execution**.
 
 ### 4.2 Reproduction steps
 
 ```bash
-git clone https://github.com/vulhub/vulhub.git
-cd vulhub/flask/CVE-2018-1000656
-cat README.md               # read the vulnerability description + payloads
-docker-compose up -d        # start the vulnerable environment
-# ... follow README.md to trigger the bug (record every command + screenshot) ...
+cd vulhub/nginx/CVE-2013-4547
+docker compose up -d                       # Nginx 1.4.2 + PHP 5.6-FPM
+# 1) upload a file "1.gif " (trailing space) containing PHP code
+python poc/upload.py
+# 2) request it with a raw space + NUL byte in the URI
+python poc/exploit.py
+# -> "CVE-2013-4547 RCE SUCCESS! uid=33(www-data) ..."
 ```
 
-> _Paste your reproduction commands and screenshots here._
+> _Paste your reproduction screenshots here._
 
 ### 4.3 Root cause analysis
 
-> _Write the root cause in your own words: e.g. the vulnerability is a
-> configuration/debugging issue — running Flask with the debugger enabled and a
-> weak secret/PIN in production exposes the Werkzeug debugger, which allows
-> arbitrary code execution / information disclosure. Explain the difference
-> between a logic error, improper input handling, and a configuration problem,
-> and why this one is primarily a configuration problem._
+The root cause is a **URI-parsing (input-handling) logic error in Nginx**, not
+an application-code bug. Nginx matches the `\.php$` location against the full
+URI (so `1.gif\x20\x00.php` matches), but then truncates the script filename at
+the NUL byte, handing `1.gif ` to PHP-FPM. The application's `.php` blacklist
+is sound in isolation — the web server's filename resolution is what lets the
+attacker bypass it.
 
 ### 4.4 Applied fix
 
-```bash
-docker-compose down         # stop the vulnerable environment
-# edit docker-compose.yml / Dockerfile (upgrade Flask, disable debug)
-docker-compose up --build -d  # rebuild and start the fixed environment
-```
-
-The fix (see [`cve/docker-compose.yml`](cve/docker-compose.yml)) upgrades Flask
-to a patched version and disables the debug mode so the vulnerable debugger is
-no longer exposed.
+The fix (see [`cve/index.php`](cve/index.php)) adds strict filename validation
+at the application layer (defense-in-depth): any filename outside
+`[a-zA-Z0-9._-]` is rejected, which blocks the trailing-space filename. (The
+root fix in production is upgrading Nginx to >= 1.4.4 / 1.5.7.)
 
 ### 4.5 Verification
 
-Repeat the exact same exploitation steps from 4.2 — the attack no longer
-succeeds, and the normal application functionality still works (regression
-test).
-
-> _Paste screenshots proving the attack fails on the fixed version here._
+After `docker compose restart` (to clear PHP-FPM opcache), the same upload is
+rejected with `Invalid filename.`, and the exploitation request returns
+`No input file specified.` — the attack no longer succeeds, while legitimate
+uploads still work.
 
 ---
 
@@ -189,8 +188,8 @@ test).
 ├── requirements.txt            # Python dependencies
 ├── .github/workflows/ci.yml    # CI/CD (SAST + SCA)
 ├── cve/
-│   ├── docker-compose.yml      # fixed version for CVE-2018-1000656
-│   └── CVE-2018-1000656.md     # CVE analysis report
+│   ├── index.php               # fixed file for CVE-2013-4547
+│   └── CVE-2013-4547.md        # CVE analysis report
 └── README.md
 ```
 
